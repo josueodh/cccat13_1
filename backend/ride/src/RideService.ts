@@ -17,7 +17,7 @@ export default class RideService {
         throw new Error("Account is not passenger");
 
       const [existingRideRequested] = await connection.query(
-        "select * from cccat13.ride where passenger_id = $1 AND status = 'requested'",
+        "select * from cccat13.ride where passenger_id = $1 AND status != 'completed'",
         [input.account_id]
       );
       if (existingRideRequested)
@@ -52,5 +52,39 @@ export default class RideService {
     );
     await connection.$pool.end();
     return ride;
+  }
+
+  async acceptRide(rideId: string, driverId: string) {
+    const connection = pgp()("postgres://postgres:123456@localhost:5432/app");
+    try {
+      const [ride] = await connection.query(
+        "select * from cccat13.ride where ride_id = $1",
+        [rideId]
+      );
+
+      if (ride.status !== "requested") throw new Error("Ride is not requested");
+
+      const [checkIsDriver] = await connection.query(
+        "select * from cccat13.account where account_id = $1",
+        [driverId]
+      );
+
+      if (checkIsDriver && !checkIsDriver.is_driver)
+        throw new Error("Account is not driver");
+
+      const [existingRideRequested] = await connection.query(
+        "select * from cccat13.ride where driver_id = $1 AND (status = 'accepted' OR status = 'in_progress')",
+        [driverId]
+      );
+
+      if (existingRideRequested) throw new Error("Driver is not available");
+
+      await connection.query(
+        "UPDATE cccat13.ride SET driver_id = $1, status = $2 WHERE ride_id = $3 ",
+        [driverId, "accepted", rideId]
+      );
+    } finally {
+      await connection.$pool.end();
+    }
   }
 }
